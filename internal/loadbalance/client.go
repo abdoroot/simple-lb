@@ -11,29 +11,41 @@ type client struct {
 	addr, LbEndPoint string //load balance server end point
 	mux              *http.ServeMux
 	logger           *slog.Logger
+	isStarted        chan struct{}
 }
 
 func NewClientServer(cfg Config) *client {
 	var (
-		mux  = http.NewServeMux()
-		addr = ":8080"
+		mux       = http.NewServeMux()
+		addr      = ":8081"
+		isStarted chan struct{}
 	)
 
 	if cfg.Addr != "" {
 		addr = cfg.Addr
 	}
 
+	if cfg.IsStarted != nil {
+		isStarted = cfg.IsStarted
+	}
+
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	return &client{
-		mux:    mux,
-		addr:   addr,
-		logger: logger,
+		mux:       mux,
+		addr:      addr,
+		logger:    logger,
+		isStarted: isStarted,
 	}
 }
 
 func (c *client) Start() error {
 	c.mux.HandleFunc("/status", c.HandleGetClientStatus)
-	slog.Info("client server running at", "addr", c.addr)
+	c.mux.HandleFunc("/", c.HandleIndex)
+	if c.isStarted != nil {
+		//Server started
+		c.isStarted <- struct{}{}
+		slog.Info("client server running at", "addr", c.addr)
+	}
 	return http.ListenAndServe(c.addr, c.mux)
 }
 
@@ -57,7 +69,7 @@ func (c *client) ISLBServerRunning() bool {
 	return resp.StatusCode == 200
 }
 
-func (c *client) HandleIncomingRequest(w http.ResponseWriter, r *http.Request) {
+func (c *client) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
-	w.Write([]byte("Hello From Backend Server"))
+	w.Write([]byte("Hello From Backend Server" + c.addr + "\n"))
 }
